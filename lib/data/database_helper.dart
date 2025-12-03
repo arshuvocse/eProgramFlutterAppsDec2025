@@ -22,7 +22,7 @@ class DatabaseHelper {
     String path = join(await getDatabasesPath(), 'app_database.db');
     return await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -68,6 +68,19 @@ class DatabaseHelper {
         FOREIGN KEY (visit_id) REFERENCES tblChecklistVisit(id) ON DELETE CASCADE
       )
     ''');
+
+    await db.execute('''
+      CREATE TABLE tblLocationQueue(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        emp_info_id INTEGER,
+        lat_value TEXT,
+        long_value TEXT,
+        address_name TEXT,
+        time_value TEXT,
+        track_date TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    ''');
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -101,6 +114,21 @@ class DatabaseHelper {
         )
       ''');
     }
+
+    if (oldVersion < 3) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS tblLocationQueue(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          emp_info_id INTEGER,
+          lat_value TEXT,
+          long_value TEXT,
+          address_name TEXT,
+          time_value TEXT,
+          track_date TEXT,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+      ''');
+    }
   }
 
   Future<void> saveUser(User user) async {
@@ -125,5 +153,42 @@ class DatabaseHelper {
   Future<void> clearUser() async {
     final db = await database;
     await db.delete('tblUser');
+  }
+
+  Future<void> insertOfflineLocation({
+    required int empInfoId,
+    required String latValue,
+    required String longValue,
+    required String addressName,
+    required String timeValue,
+    required String trackDate,
+  }) async {
+    final db = await database;
+    await db.insert(
+      'tblLocationQueue',
+      {
+        'emp_info_id': empInfoId,
+        'lat_value': latValue,
+        'long_value': longValue,
+        'address_name': addressName,
+        'time_value': timeValue,
+        'track_date': trackDate,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getOfflineLocations({int limit = 50}) async {
+    final db = await database;
+    return db.query(
+      'tblLocationQueue',
+      orderBy: 'id ASC',
+      limit: limit,
+    );
+  }
+
+  Future<void> deleteOfflineLocation(int id) async {
+    final db = await database;
+    await db.delete('tblLocationQueue', where: 'id = ?', whereArgs: [id]);
   }
 }

@@ -93,6 +93,87 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
   }
 
+  void _showLocationAccuracyDialog() {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        return Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'For a better experience, your device will need to use Location Accuracy',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                      icon: const Icon(Icons.close, size: 18),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                const _LocationRequirementRow(
+                  icon: Icons.location_on_outlined,
+                  title: 'Device location',
+                  subtitle: 'Turn on location services for accurate attendance.',
+                ),
+                const SizedBox(height: 10),
+                const _LocationRequirementRow(
+                  icon: Icons.my_location_outlined,
+                  title: 'Location accuracy',
+                  subtitle:
+                      'Allow high accuracy so the app can use GPS and nearby signals to verify your location.',
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'You can change this at any time in location settings.',
+                  style: TextStyle(fontSize: 13, color: Colors.black54),
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                      child: const Text('No thanks'),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _dashboardSecondary,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                      ),
+                      onPressed: () async {
+                        Navigator.of(dialogContext).pop();
+                        await Geolocator.openLocationSettings();
+                      },
+                      child: const Text('Turn on'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return OfflineBuilder(
@@ -158,9 +239,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ),
                         if (_showLocationBanner && _locationStatusMessage != null)
                           GestureDetector(
-                            onTap: () async {
-                              await Geolocator.openLocationSettings();
-                            },
+                            onTap: _showLocationAccuracyDialog,
                             child: Container(
                               color: Colors.red.shade400,
                               width: double.infinity,
@@ -345,18 +424,6 @@ class HomeScreen extends StatelessWidget {
         bottom: false,
         child: Column(
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: Align(
-                alignment: Alignment.center,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 340),
-                  child: _AttendanceButton(
-                    onTap: () {},
-                  ),
-                ),
-              ),
-            ),
             Expanded(
               child: Container(
                 width: double.infinity,
@@ -708,6 +775,59 @@ class _QuickActionTile extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _LocationRequirementRow extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  const _LocationRequirementRow({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: _dashboardPrimary.withValues(alpha: 0.08),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(icon, color: _dashboardPrimary, size: 20),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: _dashboardSecondary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: Colors.black87,
+                  height: 1.35,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

@@ -8,9 +8,12 @@ import 'package:e_program_apps/view/login_view.dart';
 import 'package:e_program_apps/view/attendance_view.dart';
 import 'package:e_program_apps/view/splash_screen.dart';
 import 'package:e_program_apps/viewmodel/session_viewmodel.dart';
-import 'package:e_program_apps/view/emotion_recognition_view.dart';
+import 'package:e_program_apps/services/location_tracking_service.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final locationService = LocationTrackingService();
+  await locationService.init();
   runApp(const MyApp());
 }
 
@@ -45,12 +48,6 @@ final GoRouter _router = GoRouter(
       path: '/dashboard',
       builder: (BuildContext context, GoRouterState state) {
         return const DashboardScreen();
-      },
-    ),
-    GoRoute(
-      path: '/emotion',
-      builder: (BuildContext context, GoRouterState state) {
-        return const EmotionRecognitionView();
       },
     ),
   ],

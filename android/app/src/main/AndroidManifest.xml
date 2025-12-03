@@ -11,6 +11,10 @@
     <!-- Location (Geolocator) -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
     <!-- Photos / Gallery access (Android 13+). For <= Android 12 add external storage read -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
@@ -52,6 +56,18 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <service
+            android:name="id.flutter.flutter_background_service.BackgroundService"
+            android:enabled="true"
+            android:exported="true"
+            android:foregroundServiceType="location"
+            tools:replace="android:exported,android:foregroundServiceType" />
+        <service
+            android:name="id.flutter.flutter_background_service.ForegroundService"
+            android:enabled="true"
+            android:exported="true"
+            android:foregroundServiceType="location"
+            tools:replace="android:exported,android:foregroundServiceType" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
