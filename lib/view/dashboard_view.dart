@@ -1,10 +1,14 @@
 
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_offline/flutter_offline.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_nav_bar/google_nav_bar.dart';
+import 'package:http/http.dart' as http;
+import '../config/api_config.dart';
+import '../data/database_helper.dart';
 import 'package:e_program_apps/view/approval_view.dart';
 import 'package:e_program_apps/view/reports_view.dart';
 import 'package:e_program_apps/view/settings_view.dart';
@@ -341,8 +345,80 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 }
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  final List<_DashboardTile> _tiles = [];
+  bool _tilesLoading = true;
+  String? _tilesError;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTiles();
+  }
+
+  Future<void> _loadTiles() async {
+    setState(() {
+      _tilesLoading = true;
+      _tilesError = null;
+      _tiles.clear();
+    });
+
+    try {
+      final empInfoId = await DatabaseHelper().getEmpInfoId();
+      if (empInfoId == null || empInfoId <= 0) {
+        setState(() {
+          _tilesError = 'No employee info found. Please login again.';
+          _tilesLoading = false;
+        });
+        return;
+      }
+
+      final uri = Uri.parse(ApiConfig.dashboardTiles).replace(
+        queryParameters: {'empInfoId': empInfoId.toString()},
+      );
+
+      final res = await http.get(uri).timeout(const Duration(seconds: 20));
+      debugPrint('Dashboard tiles -> ${res.statusCode} ${res.body}');
+      if (res.statusCode != 200) {
+        setState(() {
+          _tilesError = 'Unable to load snapshot. (${res.statusCode})';
+          _tilesLoading = false;
+        });
+        return;
+      }
+
+      final decoded = jsonDecode(res.body);
+      if (decoded is List) {
+        final parsed = decoded
+            .whereType<Map<String, dynamic>>()
+            .map(_DashboardTile.fromJson)
+            .toList();
+        setState(() {
+          _tiles
+            ..clear()
+            ..addAll(parsed);
+          _tilesLoading = false;
+        });
+      } else {
+        setState(() {
+          _tilesError = 'Unexpected response from server.';
+          _tilesLoading = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _tilesError = 'Unable to load snapshot. Please try again.';
+        _tilesLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -439,56 +515,30 @@ class HomeScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        "Today's Snapshot",
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w700,
-                              color: _dashboardSecondary,
-                            ),
+                      Row(
+                        children: [
+                          Text(
+                            "Today's Snapshot",
+                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: _dashboardSecondary,
+                                ),
+                          ),
+                          const Spacer(),
+                          IconButton(
+                            visualDensity: VisualDensity.compact,
+                            icon: const Icon(Icons.refresh),
+                            color: _dashboardSecondary,
+                            onPressed: _tilesLoading ? null : _loadTiles,
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 16),
-                      Row(
-                        children: const [
-                          Expanded(
-                            child: _StatCard(
-                              label: 'Punch In',
-                              value: '08:35 AM',
-                              icon: Icons.login_rounded,
-                              color: Color(0xFF4CAF50),
-                            ),
-                          ),
-                          SizedBox(width: 12),
-                          Expanded(
-                            child: _StatCard(
-                              label: 'Working Hrs',
-                              value: '08h 15m',
-                              icon: Icons.timer,
-                              color: Color(0xFF673AB7),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: const [
-                          Expanded(
-                            child: _StatCard(
-                              label: 'Meetings',
-                              value: '03',
-                              icon: Icons.handshake,
-                              color: Color(0xFFFF9800),
-                            ),
-                          ),
-                          SizedBox(width: 12),
-                          Expanded(
-                            child: _StatCard(
-                              label: 'Pending Tasks',
-                              value: '05',
-                              icon: Icons.assignment_late,
-                              color: Color(0xFFE53935),
-                            ),
-                          ),
-                        ],
+                      _SnapshotGrid(
+                        tiles: _tiles,
+                        loading: _tilesLoading,
+                        error: _tilesError,
+                        onRetry: _loadTiles,
                       ),
                       const SizedBox(height: 28),
                       Text(
@@ -655,8 +705,9 @@ class _StatCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
+        color: color.withOpacity(0.25),
         borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: color.withOpacity(0.4), width: 0.8),
       ),
       child: Row(
         children: [
@@ -664,10 +715,10 @@ class _StatCard extends StatelessWidget {
             width: 42,
             height: 42,
             decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.2),
+              color: color.withOpacity(0.9),
               borderRadius: BorderRadius.circular(14),
             ),
-            child: Icon(icon, color: color, size: 26),
+            child: Icon(icon, color: Colors.white, size: 24),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -677,15 +728,15 @@ class _StatCard extends StatelessWidget {
                 Text(
                   label,
                   style: TextStyle(
-                    color: Colors.black.withValues(alpha: 0.6),
-                    fontWeight: FontWeight.w500,
+                    color: _dashboardSecondary.withOpacity(0.8),
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   value,
                   style: const TextStyle(
-                    fontSize: 18,
+                    fontSize: 17,
                     fontWeight: FontWeight.w700,
                     color: _dashboardSecondary,
                   ),
@@ -696,6 +747,215 @@ class _StatCard extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class _SnapshotGrid extends StatelessWidget {
+  final List<_DashboardTile> tiles;
+  final bool loading;
+  final String? error;
+  final Future<void> Function() onRetry;
+
+  const _SnapshotGrid({
+    required this.tiles,
+    required this.loading,
+    required this.error,
+    required this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (loading) {
+      return SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: const [
+            _SkeletonCard(width: 220),
+            SizedBox(width: 12),
+            _SkeletonCard(width: 220),
+            SizedBox(width: 12),
+            _SkeletonCard(width: 220),
+          ],
+        ),
+      );
+    }
+
+    if (error != null) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.orange.shade50,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.orange.shade200),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.warning_amber_outlined, color: Colors.orange),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                error!,
+                style: const TextStyle(
+                  color: Color(0xFF8A6D3B),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: onRetry,
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (tiles.isEmpty) {
+      return const Text('No snapshot available right now.');
+    }
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: tiles
+            .map((t) => Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: SizedBox(
+                    width: 220,
+                    child: _StatCard(
+                      label: t.fieldName,
+                      value: t.displayValue,
+                      icon: t.icon,
+                      color: t.color,
+                    ),
+                  ),
+                ))
+            .toList(),
+      ),
+    );
+  }
+}
+
+class _SkeletonCard extends StatelessWidget {
+  final double? width;
+  const _SkeletonCard({this.width});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade200,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade300,
+              borderRadius: BorderRadius.circular(14),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  height: 12,
+                  width: 80,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  height: 16,
+                  width: 60,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DashboardTile {
+  final String fieldName;
+  final Color color;
+  final IconData icon;
+  final int fieldCount;
+  final String fieldValue;
+
+  _DashboardTile({
+    required this.fieldName,
+    required this.color,
+    required this.icon,
+    required this.fieldCount,
+    required this.fieldValue,
+  });
+
+  factory _DashboardTile.fromJson(Map<String, dynamic> json) {
+    final colorString = (json['fieldBgColor'] ?? '').toString();
+    return _DashboardTile(
+      fieldName: (json['fieldName'] ?? '').toString(),
+      color: _parseColor(colorString) ?? _dashboardPrimary,
+      icon: _iconFromApi((json['fieldIcon'] ?? '').toString()),
+      fieldCount: json['fieldCount'] is int
+          ? json['fieldCount'] as int
+          : int.tryParse('${json['fieldCount']}') ?? 0,
+      fieldValue: (json['fieldValue'] ?? '').toString(),
+    );
+  }
+
+  String get displayValue {
+    if (fieldValue.trim().isNotEmpty) return fieldValue;
+    return fieldCount.toString();
+  }
+}
+
+Color? _parseColor(String hex) {
+  var value = hex.replaceAll('#', '').trim();
+  if (value.length == 6) value = 'FF$value';
+  try {
+    final intVal = int.parse(value, radix: 16);
+    return Color(intVal);
+  } catch (_) {
+    return null;
+  }
+}
+
+IconData _iconFromApi(String iconCode) {
+  switch (iconCode) {
+    case 'ri-login-box-line':
+      return Icons.login_rounded;
+    case 'ri-logout-box-line':
+      return Icons.logout_rounded;
+    case 'ri-time-line':
+      return Icons.timer;
+    case 'ri-group-line':
+      return Icons.groups_2_outlined;
+    case 'ri-user-smile-line':
+      return Icons.sentiment_satisfied_alt_outlined;
+    case 'ri-task-line':
+      return Icons.task_alt;
+    case 'ri-book-2-line':
+      return Icons.menu_book_outlined;
+    case 'ri-road-map-line':
+      return Icons.alt_route;
+    default:
+      return Icons.dashboard_customize_outlined;
   }
 }
 

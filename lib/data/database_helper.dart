@@ -22,7 +22,7 @@ class DatabaseHelper {
     String path = join(await getDatabasesPath(), 'app_database.db');
     return await openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -32,8 +32,18 @@ class DatabaseHelper {
     await db.execute('''
       CREATE TABLE tblUser(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        email TEXT,
-        password TEXT
+        userId INTEGER,
+        empInfoId INTEGER,
+        userName TEXT,
+        empMasterCode TEXT,
+        userType TEXT,
+        loginName TEXT,
+        password TEXT,
+        userEmail TEXT,
+        roleType TEXT,
+        empRole TEXT,
+        desigName TEXT,
+        email TEXT
       )
     ''');
 
@@ -129,18 +139,52 @@ class DatabaseHelper {
         )
       ''');
     }
+
+    if (oldVersion < 4) {
+      await db.execute("ALTER TABLE tblUser ADD COLUMN userId INTEGER");
+      await db.execute("ALTER TABLE tblUser ADD COLUMN empInfoId INTEGER");
+      await db.execute("ALTER TABLE tblUser ADD COLUMN userName TEXT");
+      await db.execute("ALTER TABLE tblUser ADD COLUMN empMasterCode TEXT");
+      await db.execute("ALTER TABLE tblUser ADD COLUMN userType TEXT");
+      await db.execute("ALTER TABLE tblUser ADD COLUMN loginName TEXT");
+      await db.execute("ALTER TABLE tblUser ADD COLUMN userEmail TEXT");
+      await db.execute("ALTER TABLE tblUser ADD COLUMN roleType TEXT");
+      await db.execute("ALTER TABLE tblUser ADD COLUMN empRole TEXT");
+      await db.execute("ALTER TABLE tblUser ADD COLUMN desigName TEXT");
+    }
   }
 
   Future<void> saveUser(User user) async {
     final db = await database;
-    final emailOrUsername = (user.email).isNotEmpty ? user.email : user.username;
-    // Ensure only one active session record exists
     await db.delete('tblUser');
     await db.insert(
       'tblUser',
-      {'email': emailOrUsername, 'password': user.password},
+      {
+        'userId': user.userId,
+        'empInfoId': user.empInfoId,
+        'userName': user.userName,
+        'empMasterCode': user.empMasterCode,
+        'userType': user.userType,
+        'loginName': user.loginName,
+        'password': user.password,
+        'userEmail': user.userEmail,
+        'roleType': user.roleType,
+        'empRole': user.empRole,
+        'desigName': user.desigName,
+        // Keep legacy email column populated for older reads
+        'email': user.userEmail,
+      },
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
+  }
+
+  Future<int?> getEmpInfoId() async {
+    final db = await database;
+    final result = await db.query('tblUser', columns: ['empInfoId'], limit: 1);
+    if (result.isEmpty) return null;
+    final value = result.first['empInfoId'];
+    if (value is int) return value;
+    return int.tryParse('$value');
   }
 
   Future<bool> hasUser() async {
