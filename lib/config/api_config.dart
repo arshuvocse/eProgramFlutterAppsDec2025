@@ -6,4 +6,4 @@ class ApiConfig {
   static const String punchInfo = '$baseUrl/Attendance/GetPunchInOutInfo';
   static const String savePunch = '$baseUrl/Attendance/SavePunch';
   static const String dashboardTiles = '$baseUrl/Dashboard/Tiles';
-}
+  }
