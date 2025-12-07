@@ -41,7 +41,6 @@ class AppSnackBar {
       case SnackTone.warning:
         return _SnackColors(Colors.orange.shade700, Icons.warning_amber_outlined);
       case SnackTone.success:
-      default:
         return _SnackColors(Colors.green.shade700, Icons.check_circle_outline);
     }
   }

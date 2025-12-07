@@ -22,7 +22,7 @@ class DatabaseHelper {
     String path = join(await getDatabasesPath(), 'app_database.db');
     return await openDatabase(
       path,
-      version: 4,
+      version: 5,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -91,6 +91,18 @@ class DatabaseHelper {
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
       )
     ''');
+
+    await db.execute('''
+      CREATE TABLE tblDashboardTile(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        field_name TEXT,
+        field_bg_color TEXT,
+        field_icon TEXT,
+        field_count INTEGER,
+        field_value TEXT,
+        updated_at TEXT
+      )
+    ''');
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -151,6 +163,20 @@ class DatabaseHelper {
       await db.execute("ALTER TABLE tblUser ADD COLUMN roleType TEXT");
       await db.execute("ALTER TABLE tblUser ADD COLUMN empRole TEXT");
       await db.execute("ALTER TABLE tblUser ADD COLUMN desigName TEXT");
+    }
+
+    if (oldVersion < 5) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS tblDashboardTile(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          field_name TEXT,
+          field_bg_color TEXT,
+          field_icon TEXT,
+          field_count INTEGER,
+          field_value TEXT,
+          updated_at TEXT
+        )
+      ''');
     }
   }
 
@@ -234,5 +260,34 @@ class DatabaseHelper {
   Future<void> deleteOfflineLocation(int id) async {
     final db = await database;
     await db.delete('tblLocationQueue', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<void> cacheDashboardTiles(List<Map<String, dynamic>> tiles) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete('tblDashboardTile');
+      for (final tile in tiles) {
+        await txn.insert(
+          'tblDashboardTile',
+          {
+            'field_name': tile['field_name'] ?? tile['fieldName'] ?? '',
+            'field_bg_color': tile['field_bg_color'] ?? tile['fieldBgColor'] ?? '',
+            'field_icon': tile['field_icon'] ?? tile['fieldIcon'] ?? '',
+            'field_count': tile['field_count'] ?? tile['fieldCount'] ?? 0,
+            'field_value': tile['field_value'] ?? tile['fieldValue'] ?? '',
+            'updated_at': DateTime.now().toIso8601String(),
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> getCachedDashboardTiles() async {
+    final db = await database;
+    return db.query(
+      'tblDashboardTile',
+      orderBy: 'id ASC',
+    );
   }
 }

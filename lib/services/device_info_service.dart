@@ -40,14 +40,20 @@ class DeviceInfoService {
         final model = info.model.trim();
         _device = [brand, model].where((e) => e.isNotEmpty).join(' ').trim();
         _os = 'Android';
-        _osVersion = info.version.release?.trim();
+        _osVersion = info.version.release.trim();
       } else if (Platform.isIOS) {
         final info = await deviceInfo.iosInfo;
-        _imei = info.identifierForVendor?.trim();
-        _deviceToken = info.identifierForVendor?.trim();
-        _device = info.utsname.machine?.trim() ?? info.model?.trim();
+        final idfv = info.identifierForVendor;
+        if (idfv != null && idfv.trim().isNotEmpty) {
+          _imei = idfv.trim();
+          _deviceToken = idfv.trim();
+        }
+
+        final machine = info.utsname.machine.trim();
+        final model = info.model.trim();
+        _device = machine.isNotEmpty ? machine : model;
         _os = 'iOS';
-        _osVersion = info.systemVersion?.trim();
+        _osVersion = info.systemVersion.trim();
       } else {
         _os = Platform.operatingSystem;
         _osVersion = Platform.operatingSystemVersion;

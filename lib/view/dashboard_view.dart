@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_offline/flutter_offline.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_nav_bar/google_nav_bar.dart';
 import 'package:http/http.dart' as http;
@@ -354,8 +355,11 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final List<_DashboardTile> _tiles = [];
+  final DatabaseHelper _dbHelper = DatabaseHelper();
   bool _tilesLoading = true;
   String? _tilesError;
+  DateTime? _lastSnapshotUpdatedAt;
+  bool _usingCachedSnapshot = false;
 
   @override
   void initState() {
@@ -363,20 +367,96 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadTiles();
   }
 
+  Future<_CachedSnapshot> _loadCachedSnapshot({bool setStateIfMounted = true}) async {
+    try {
+      final cached = await _dbHelper.getCachedDashboardTiles();
+      final tiles = cached.map(_DashboardTile.fromDb).toList();
+      DateTime? updatedAt;
+      if (cached.isNotEmpty) {
+        final raw = cached.first['updated_at']?.toString();
+        if (raw != null && raw.isNotEmpty) {
+          updatedAt = DateTime.tryParse(raw);
+        }
+      }
+      if (setStateIfMounted && tiles.isNotEmpty && mounted) {
+        setState(() {
+          _tiles
+            ..clear()
+            ..addAll(tiles);
+          _tilesLoading = false;
+          _lastSnapshotUpdatedAt = updatedAt;
+          _usingCachedSnapshot = true;
+        });
+      }
+      return _CachedSnapshot(tiles: tiles, updatedAt: updatedAt);
+    } catch (e) {
+      debugPrint('[Dashboard] cached tiles load failed: $e');
+      return const _CachedSnapshot(tiles: [], updatedAt: null);
+    }
+  }
+
   Future<void> _loadTiles() async {
-    setState(() {
-      _tilesLoading = true;
-      _tilesError = null;
-      _tiles.clear();
-    });
+    debugPrint('[Dashboard] _loadTiles() start');
+
+    final cachedSnapshot = await _loadCachedSnapshot();
 
     try {
-      final empInfoId = await DatabaseHelper().getEmpInfoId();
-      if (empInfoId == null || empInfoId <= 0) {
+      final connectivity = await Connectivity().checkConnectivity();
+      final connected = connectivity.contains(ConnectivityResult.mobile) ||
+          connectivity.contains(ConnectivityResult.wifi) ||
+          connectivity.contains(ConnectivityResult.ethernet);
+      debugPrint('[Dashboard] connectivity: $connectivity (connected=$connected)');
+
+      if (!connected) {
+        if (!mounted) return;
+        if (cachedSnapshot.tiles.isNotEmpty) {
+          debugPrint('[Dashboard] offline -> showing cached tiles');
+          setState(() {
+            _tilesError = _offlineSnapshotMessage(cachedSnapshot.updatedAt);
+            _tilesLoading = false;
+            _usingCachedSnapshot = true;
+            _lastSnapshotUpdatedAt = cachedSnapshot.updatedAt ?? _lastSnapshotUpdatedAt;
+          });
+        } else {
+          debugPrint('[Dashboard] offline -> no cached tiles');
+          setState(() {
+            _tilesLoading = false;
+            _tilesError = 'No saved snapshot available offline.';
+            _usingCachedSnapshot = false;
+            _lastSnapshotUpdatedAt = null;
+          });
+        }
+        return;
+      }
+
+      if (mounted) {
         setState(() {
-          _tilesError = 'No employee info found. Please login again.';
-          _tilesLoading = false;
+          _tilesLoading = cachedSnapshot.tiles.isEmpty;
+          _tilesError = null;
+          // keep showing cached tiles while fetching online data
         });
+      }
+
+      final empInfoId = await _dbHelper.getEmpInfoId();
+      if (empInfoId == null || empInfoId <= 0) {
+        if (!mounted) return;
+        if (cachedSnapshot.tiles.isNotEmpty) {
+          debugPrint('[Dashboard] no empInfoId -> showing cached tiles');
+          setState(() {
+            _tilesLoading = false;
+            _tilesError = 'Showing last saved snapshot (no user found).';
+            _usingCachedSnapshot = true;
+            _lastSnapshotUpdatedAt = cachedSnapshot.updatedAt ?? _lastSnapshotUpdatedAt;
+          });
+        } else {
+          debugPrint('[Dashboard] no empInfoId and no cached tiles');
+          setState(() {
+            _tilesError = 'No employee info found. Please login again.';
+            _tilesLoading = false;
+            _usingCachedSnapshot = false;
+            _lastSnapshotUpdatedAt = null;
+          });
+        }
         return;
       }
 
@@ -387,41 +467,72 @@ class _HomeScreenState extends State<HomeScreen> {
       final res = await http.get(uri).timeout(const Duration(seconds: 20));
       debugPrint('Dashboard tiles -> ${res.statusCode} ${res.body}');
       if (res.statusCode != 200) {
-        setState(() {
-          _tilesError = 'Unable to load snapshot. (${res.statusCode})';
-          _tilesLoading = false;
-        });
-        return;
+        throw Exception('Status ${res.statusCode}');
       }
 
       final decoded = jsonDecode(res.body);
-      if (decoded is List) {
-        final parsed = decoded
-            .whereType<Map<String, dynamic>>()
-            .map(_DashboardTile.fromJson)
-            .toList();
+      if (decoded is! List) {
+        throw Exception('Unexpected response from server.');
+      }
+
+      final parsed = decoded
+          .whereType<Map<String, dynamic>>()
+          .map(_DashboardTile.fromJson)
+          .toList();
+
+      await _dbHelper.cacheDashboardTiles(
+        parsed.map((e) => e.toDbMap()).toList(),
+      );
+      final now = DateTime.now();
+      debugPrint('[Dashboard] cached ${parsed.length} tiles from API');
+
+      if (!mounted) return;
+      setState(() {
+        _tiles
+          ..clear()
+          ..addAll(parsed);
+        _tilesLoading = false;
+        _tilesError = null;
+        _lastSnapshotUpdatedAt = now;
+        _usingCachedSnapshot = false;
+      });
+    } catch (e, st) {
+      debugPrint('[Dashboard] error loading tiles: $e');
+      debugPrint('$st');
+      if (!mounted) return;
+      if (cachedSnapshot.tiles.isNotEmpty) {
+        debugPrint('[Dashboard] error -> showing cached tiles');
         setState(() {
           _tiles
             ..clear()
-            ..addAll(parsed);
+            ..addAll(cachedSnapshot.tiles);
           _tilesLoading = false;
+          _tilesError = _offlineSnapshotMessage(cachedSnapshot.updatedAt);
+          _usingCachedSnapshot = true;
+          _lastSnapshotUpdatedAt = cachedSnapshot.updatedAt ?? _lastSnapshotUpdatedAt;
         });
       } else {
+        debugPrint('[Dashboard] error and no cached tiles');
         setState(() {
-          _tilesError = 'Unexpected response from server.';
+          _tilesError = 'Unable to load snapshot. Please try again.';
           _tilesLoading = false;
+          _usingCachedSnapshot = false;
+          _lastSnapshotUpdatedAt = null;
         });
       }
-    } catch (e) {
-      setState(() {
-        _tilesError = 'Unable to load snapshot. Please try again.';
-        _tilesLoading = false;
-      });
     }
+  }
+
+  String _offlineSnapshotMessage(DateTime? updatedAt) {
+    if (updatedAt == null) return 'Saved snapshot (offline).';
+    return 'Saved snapshot from ${_formatTimestamp(updatedAt)} (offline).';
   }
 
   @override
   Widget build(BuildContext context) {
+    final lastUpdatedLabel = _lastSnapshotUpdatedAt != null
+        ? 'Last updated: ${_formatTimestamp(_lastSnapshotUpdatedAt!)}${_usingCachedSnapshot ? ' (saved)' : ''}'
+        : null;
     final actions = [
       _ActionItem(
         title: 'Attendance',
@@ -510,47 +621,53 @@ class _HomeScreenState extends State<HomeScreen> {
                     topRight: Radius.circular(28),
                   ),
                 ),
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text(
-                            "Today's Snapshot",
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                  color: _dashboardSecondary,
-                                ),
-                          ),
-                          const Spacer(),
-                          IconButton(
-                            visualDensity: VisualDensity.compact,
-                            icon: const Icon(Icons.refresh),
-                            color: _dashboardSecondary,
-                            onPressed: _tilesLoading ? null : _loadTiles,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      _SnapshotGrid(
-                        tiles: _tiles,
-                        loading: _tilesLoading,
-                        error: _tilesError,
-                        onRetry: _loadTiles,
-                      ),
-                      const SizedBox(height: 28),
-                      Text(
-                        'Quick Actions',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w700,
-                              color: _dashboardSecondary,
+                child: RefreshIndicator(
+                  color: _dashboardPrimary,
+                  onRefresh: _loadTiles,
+                  child: SingleChildScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              "Today's Snapshot",
+                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    color: _dashboardSecondary,
+                                  ),
                             ),
-                      ),
-                      const SizedBox(height: 12),
-                      _QuickActionGrid(actions: actions),
-                    ],
+                            const Spacer(),
+                            IconButton(
+                              visualDensity: VisualDensity.compact,
+                              icon: const Icon(Icons.refresh),
+                              color: _dashboardSecondary,
+                              onPressed: _tilesLoading ? null : _loadTiles,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        _SnapshotGrid(
+                          tiles: _tiles,
+                          loading: _tilesLoading,
+                          error: _tilesError,
+                          onRetry: _loadTiles,
+                          lastUpdatedLabel: lastUpdatedLabel,
+                        ),
+                        const SizedBox(height: 28),
+                        Text(
+                          'Quick Actions',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: _dashboardSecondary,
+                              ),
+                        ),
+                        const SizedBox(height: 12),
+                        _QuickActionGrid(actions: actions),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -561,130 +678,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-}
-
-class _AttendanceButton extends StatelessWidget {
-  final VoidCallback onTap;
-
-  const _AttendanceButton({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(26),
-        onTap: onTap,
-        child: Ink(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(26),
-            gradient: const LinearGradient(
-              colors: [Color(0xFF0BAF9A), _dashboardPrimary],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: _dashboardPrimary.withValues(alpha: 0.35),
-                blurRadius: 20,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          const Text(
-                            'MMS',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const Spacer(),
-                          IconButton(
-                            onPressed: onTap,
-                            splashRadius: 22,
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                            icon: const Icon(Icons.refresh, color: Colors.white),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey.shade300),
-                        ),
-                        child: Column(
-                          children: [
-                            _buildMmsRow('Total Provider', '1'),
-                            _buildMmsRow('Visited Provider', '0'),
-                            _buildMmsRow('Self Visited Provider', '0'),
-                            _buildMmsRow('Self Visit Count', '0', showDivider: false),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMmsRow(String label, String value, {bool showDivider = true}) {
-    final row = Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              '$label:',
-              style: const TextStyle(
-                color: _dashboardSecondary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          Text(
-            value,
-            style: const TextStyle(
-              color: _dashboardSecondary,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-
-    if (!showDivider) return row;
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        row,
-        Divider(
-          height: 1,
-          thickness: 1,
-          color: Colors.grey.shade300,
-        ),
-      ],
-    );
-  }
 }
 
 class _StatCard extends StatelessWidget {
@@ -703,45 +696,73 @@ class _StatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.25),
+        gradient: _buildStatGradient(color),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: color.withOpacity(0.4), width: 0.8),
+        border: Border.all(
+          color: _shiftColor(color, -0.12).withOpacity(0.35),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: color.withOpacity(0.22),
+            blurRadius: 16,
+            offset: const Offset(0, 10),
+          ),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
+          ),
+        ],
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Container(
-            width: 42,
-            height: 42,
+            width: 44,
+            height: 44,
             decoration: BoxDecoration(
-              color: color.withOpacity(0.9),
+              gradient: LinearGradient(
+                colors: [
+                  _shiftColor(color, 0.18),
+                  _shiftColor(color, -0.04),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
               borderRadius: BorderRadius.circular(14),
             ),
-            child: Icon(icon, color: Colors.white, size: 24),
+            child: Icon(icon, color: Colors.white, size: 22),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   label,
                   style: TextStyle(
-                    color: _dashboardSecondary.withOpacity(0.8),
+                    color: _dashboardSecondary.withOpacity(0.85),
                     fontWeight: FontWeight.w800,
+                    letterSpacing: 0.1,
                   ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  value,
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                    color: _dashboardSecondary,
-                  ),
-                ),
+                const SizedBox(height: 8),
               ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 19,
+              fontWeight: FontWeight.w800,
+              color: _dashboardSecondary,
             ),
           ),
         ],
@@ -755,12 +776,14 @@ class _SnapshotGrid extends StatelessWidget {
   final bool loading;
   final String? error;
   final Future<void> Function() onRetry;
+  final String? lastUpdatedLabel;
 
   const _SnapshotGrid({
     required this.tiles,
     required this.loading,
     required this.error,
     required this.onRetry,
+    this.lastUpdatedLabel,
   });
 
   @override
@@ -780,59 +803,86 @@ class _SnapshotGrid extends StatelessWidget {
       );
     }
 
+    final children = <Widget>[];
+
     if (error != null) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.orange.shade50,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.orange.shade200),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.warning_amber_outlined, color: Colors.orange),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                error!,
-                style: const TextStyle(
-                  color: Color(0xFF8A6D3B),
-                  fontWeight: FontWeight.w600,
+      children.add(
+        Container(
+          width: double.infinity,
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.orange.shade50,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.orange.shade200),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.warning_amber_outlined, color: Colors.orange),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  error!,
+                  style: const TextStyle(
+                    color: Color(0xFF8A6D3B),
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
-            ),
-            TextButton(
-              onPressed: onRetry,
-              child: const Text('Retry'),
-            ),
-          ],
+              TextButton(
+                onPressed: onRetry,
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
         ),
       );
     }
 
     if (tiles.isEmpty) {
-      return const Text('No snapshot available right now.');
+      children.add(const Text('No snapshot available right now.'));
+    } else {
+      children.add(
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: tiles
+                .map((t) => Padding(
+                      padding: const EdgeInsets.only(right: 12),
+                      child: SizedBox(
+                        width: 220,
+                        child: _StatCard(
+                          label: t.fieldName,
+                          value: t.displayValue,
+                          icon: t.icon,
+                          color: t.color,
+                        ),
+                      ),
+                    ))
+                .toList(),
+          ),
+        ),
+      );
     }
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: tiles
-            .map((t) => Padding(
-                  padding: const EdgeInsets.only(right: 12),
-                  child: SizedBox(
-                    width: 220,
-                    child: _StatCard(
-                      label: t.fieldName,
-                      value: t.displayValue,
-                      icon: t.icon,
-                      color: t.color,
-                    ),
-                  ),
-                ))
-            .toList(),
-      ),
+    if (lastUpdatedLabel != null) {
+      children.add(
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Text(
+            lastUpdatedLabel!,
+            style: const TextStyle(
+              fontSize: 12,
+              color: Colors.black54,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: children,
     );
   }
 }
@@ -893,25 +943,24 @@ class _SkeletonCard extends StatelessWidget {
 
 class _DashboardTile {
   final String fieldName;
-  final Color color;
-  final IconData icon;
+  final String fieldBgColor;
+  final String fieldIconCode;
   final int fieldCount;
   final String fieldValue;
 
-  _DashboardTile({
+  const _DashboardTile({
     required this.fieldName,
-    required this.color,
-    required this.icon,
+    required this.fieldBgColor,
+    required this.fieldIconCode,
     required this.fieldCount,
     required this.fieldValue,
   });
 
   factory _DashboardTile.fromJson(Map<String, dynamic> json) {
-    final colorString = (json['fieldBgColor'] ?? '').toString();
     return _DashboardTile(
       fieldName: (json['fieldName'] ?? '').toString(),
-      color: _parseColor(colorString) ?? _dashboardPrimary,
-      icon: _iconFromApi((json['fieldIcon'] ?? '').toString()),
+      fieldBgColor: (json['fieldBgColor'] ?? '').toString(),
+      fieldIconCode: (json['fieldIcon'] ?? '').toString(),
       fieldCount: json['fieldCount'] is int
           ? json['fieldCount'] as int
           : int.tryParse('${json['fieldCount']}') ?? 0,
@@ -919,10 +968,46 @@ class _DashboardTile {
     );
   }
 
+  factory _DashboardTile.fromDb(Map<String, dynamic> map) {
+    return _DashboardTile(
+      fieldName: (map['field_name'] ?? map['fieldName'] ?? '').toString(),
+      fieldBgColor: (map['field_bg_color'] ?? map['fieldBgColor'] ?? '').toString(),
+      fieldIconCode: (map['field_icon'] ?? map['fieldIcon'] ?? '').toString(),
+      fieldCount: map['field_count'] is int
+          ? map['field_count'] as int
+          : int.tryParse('${map['field_count'] ?? map['fieldCount'] ?? 0}') ?? 0,
+      fieldValue: (map['field_value'] ?? map['fieldValue'] ?? '').toString(),
+    );
+  }
+
+  Map<String, dynamic> toDbMap() {
+    return {
+      'field_name': fieldName,
+      'field_bg_color': fieldBgColor,
+      'field_icon': fieldIconCode,
+      'field_count': fieldCount,
+      'field_value': fieldValue,
+    };
+  }
+
+  Color get color => _parseColor(fieldBgColor) ?? _dashboardPrimary;
+
+  IconData get icon => _iconFromApi(fieldIconCode);
+
   String get displayValue {
     if (fieldValue.trim().isNotEmpty) return fieldValue;
     return fieldCount.toString();
   }
+}
+
+class _CachedSnapshot {
+  final List<_DashboardTile> tiles;
+  final DateTime? updatedAt;
+
+  const _CachedSnapshot({
+    required this.tiles,
+    required this.updatedAt,
+  });
 }
 
 Color? _parseColor(String hex) {
@@ -959,10 +1044,60 @@ IconData _iconFromApi(String iconCode) {
   }
 }
 
+LinearGradient _buildStatGradient(Color base) {
+  return LinearGradient(
+    colors: [
+      _shiftColor(base, 0.22).withOpacity(0.95),
+      _shiftColor(base, -0.06).withOpacity(0.9),
+    ],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+}
+
+Color _shiftColor(Color color, double amount) {
+  final hsl = HSLColor.fromColor(color);
+  final shifted = hsl.withLightness(
+    (hsl.lightness + amount).clamp(0.0, 1.0),
+  );
+  return shifted.toColor();
+}
+
+String _formatTimestamp(DateTime dateTime) {
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec'
+  ];
+  final local = dateTime.toLocal();
+  final datePart = '${local.day.toString().padLeft(2, '0')} ${months[local.month - 1]} ${local.year}';
+  final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
+  final minute = local.minute.toString().padLeft(2, '0');
+  final period = local.hour >= 12 ? 'PM' : 'AM';
+  return '$datePart $hour:$minute $period';
+}
+
 class _QuickActionGrid extends StatelessWidget {
   final List<_ActionItem> actions;
 
   const _QuickActionGrid({required this.actions});
+
+  static const _cardAccents = [
+    Color(0xFF00A8E8),
+    Color(0xFF7B61FF),
+    Color(0xFF0EB29A),
+    Color(0xFFEF476F),
+    Color(0xFFEE9B00),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -981,7 +1116,8 @@ class _QuickActionGrid extends StatelessWidget {
           ),
           itemBuilder: (context, index) {
             final action = actions[index];
-            return _QuickActionTile(action: action);
+            final accent = _cardAccents[index % _cardAccents.length];
+            return _QuickActionTile(action: action, accent: accent);
           },
         );
       },
@@ -991,42 +1127,67 @@ class _QuickActionGrid extends StatelessWidget {
 
 class _QuickActionTile extends StatelessWidget {
   final _ActionItem action;
+  final Color accent;
 
-  const _QuickActionTile({required this.action});
+  const _QuickActionTile({required this.action, required this.accent});
 
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: const Color(0xFFF5F8FF),
-      borderRadius: BorderRadius.circular(20),
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(18),
       child: InkWell(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(18),
         onTap: action.onTap != null ? () => action.onTap!(context) : null,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                accent.withOpacity(0.10),
+                Colors.white,
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: accent.withOpacity(0.20), width: 1),
+            boxShadow: [
+              BoxShadow(
+                color: accent.withOpacity(0.14),
+                blurRadius: 14,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 44,
-                height: 44,
-              decoration: BoxDecoration(
-                  color: _dashboardPrimary.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(
-                  action.icon,
-                  color: _dashboardPrimary,
-                ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: accent.withOpacity(0.18),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Icon(action.icon, color: accent),
+                  ),
+                  const Spacer(),
+                  Icon(Icons.arrow_outward_rounded, size: 18, color: accent.withOpacity(0.8)),
+                ],
               ),
-              const SizedBox(height: 12),
+              const Spacer(),
               Text(
                 action.title,
                 style: const TextStyle(
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w700,
                   fontSize: 15,
-                  height: 1.2,
+                  height: 1.25,
                   color: _dashboardSecondary,
+                  letterSpacing: 0.2,
                 ),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
