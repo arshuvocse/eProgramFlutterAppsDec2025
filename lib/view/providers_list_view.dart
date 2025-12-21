@@ -22,45 +22,78 @@ class ProvidersListView extends StatelessWidget {
               foregroundColor: Colors.white,
               title: const Text('Providers'),
             ),
-            body: Column(
-              children: [
-                const SizedBox(height: 8),
-                _ChipsRow(
-                  selected: vm.chip,
-                  onSelected: vm.setChip,
-                  brand: brand,
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                  child: TextField(
-                    onChanged: vm.setQuery,
-                    decoration: InputDecoration(
-                      hintText: 'Search',
-                      prefixIcon: const Icon(Icons.search),
-                      contentPadding: const EdgeInsets.symmetric(vertical: 0),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
+            body: RefreshIndicator(
+              onRefresh: vm.refresh,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: [
+                  const SizedBox(height: 8),
+                  _ChipsRow(
+                    selected: vm.chip,
+                    onSelected: vm.setChip,
+                    brand: brand,
+                    options: vm.filters,
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                    child: TextField(
+                      onChanged: vm.setQuery,
+                      decoration: InputDecoration(
+                        hintText: 'Search by name, code, or mobile',
+                        prefixIcon: const Icon(Icons.search),
+                        contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                     ),
                   ),
-                ),
-                Expanded(
-                  child: ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    itemCount: filtered.length,
-                    itemBuilder: (context, i) => _ProviderCard(
-                      data: filtered[i],
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => ChecklistView(provider: filtered[i]),
+                  if (vm.error != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.info_outline, color: Colors.orange),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              vm.error!,
+                              style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.w600),
+                            ),
                           ),
-                        );
-                      },
+                        ],
+                      ),
                     ),
-                  ),
-                )
-              ],
+                  if (vm.loading && filtered.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 40),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (filtered.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 40),
+                      child: Center(child: Text('No providers found')),
+                    )
+                  else
+                    ...[
+                      for (final p in filtered)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                          child: _ProviderCard(
+                            data: p,
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => ChecklistView(provider: p),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      const SizedBox(height: 12),
+                    ],
+                ],
+              ),
             ),
           );
         },
@@ -73,21 +106,22 @@ class _ChipsRow extends StatelessWidget {
   final String selected;
   final ValueChanged<String> onSelected;
   final Color brand;
+  final List<String> options;
   const _ChipsRow({
     required this.selected,
     required this.onSelected,
     required this.brand,
+    required this.options,
   });
 
   @override
   Widget build(BuildContext context) {
-    const items = ['All', 'Blue Star', 'Green Star', 'Silver'];
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 12),
       scrollDirection: Axis.horizontal,
       child: Row(
         children: [
-          for (final it in items)
+          for (final it in options)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4),
               child: ChoiceChip(
@@ -126,7 +160,7 @@ class _ProviderCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    data.name,
+                    data.providerName,
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
@@ -134,7 +168,7 @@ class _ProviderCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    data.code,
+                    data.providerCode,
                     style: const TextStyle(color: Colors.black54),
                   ),
                 ],
@@ -143,11 +177,12 @@ class _ProviderCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
-                    data.category,
+                    data.programName,
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 4),
-                  Text(data.type, style: const TextStyle(color: Colors.black54)),
+                  Text(data.mobileNo.isNotEmpty ? data.mobileNo : data.email,
+                      style: const TextStyle(color: Colors.black54)),
                 ],
               ),
             ],

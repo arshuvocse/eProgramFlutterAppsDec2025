@@ -19,6 +19,8 @@ import 'package:e_program_apps/view/providers_list_view.dart';
 import 'package:e_program_apps/view/checklist_response_view.dart';
 import 'package:e_program_apps/view/training_view.dart';
 import 'package:e_program_apps/view/stock_list_view.dart';
+import 'package:e_program_apps/view/leave_apply_view.dart';
+import 'package:e_program_apps/view/provider_enrollment_view.dart';
 
 const _dashboardPrimary = Color(0xFF008080);
 const _dashboardSecondary = Color(0xFF0A2540);
@@ -544,6 +546,15 @@ class _HomeScreenState extends State<HomeScreen> {
         },
       ),
       _ActionItem(
+        title: 'Provider Enrollment',
+        icon: Icons.person_add_alt_1_outlined,
+        onTap: (context) {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const ProviderEnrollmentView()),
+          );
+        },
+      ),
+      _ActionItem(
         title: 'Provider List',
         icon: Icons.people_outline,
         onTap: (context) {
@@ -594,6 +605,15 @@ class _HomeScreenState extends State<HomeScreen> {
         onTap: (context) {
           Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const StockListView()),
+          );
+        },
+      ),
+      _ActionItem(
+        title: 'Leave',
+        icon: Icons.event_note_outlined,
+        onTap: (context) {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const LeaveApplyView()),
           );
         },
       ),
@@ -701,17 +721,17 @@ class _StatCard extends StatelessWidget {
         gradient: _buildStatGradient(color),
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
-          color: _shiftColor(color, -0.12).withOpacity(0.35),
+          color: _shiftColor(color, -0.12).withValues(alpha: 0.35),
           width: 1,
         ),
         boxShadow: [
           BoxShadow(
-            color: color.withOpacity(0.22),
+            color: color.withValues(alpha: 0.22),
             blurRadius: 16,
             offset: const Offset(0, 10),
           ),
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 4,
             offset: const Offset(0, 1),
           ),
@@ -745,7 +765,7 @@ class _StatCard extends StatelessWidget {
                 Text(
                   label,
                   style: TextStyle(
-                    color: _dashboardSecondary.withOpacity(0.85),
+                    color: _dashboardSecondary.withValues(alpha: 0.85),
                     fontWeight: FontWeight.w800,
                     letterSpacing: 0.1,
                   ),
@@ -1047,8 +1067,8 @@ IconData _iconFromApi(String iconCode) {
 LinearGradient _buildStatGradient(Color base) {
   return LinearGradient(
     colors: [
-      _shiftColor(base, 0.22).withOpacity(0.95),
-      _shiftColor(base, -0.06).withOpacity(0.9),
+      _shiftColor(base, 0.22).withValues(alpha: 0.95),
+      _shiftColor(base, -0.06).withValues(alpha: 0.9),
     ],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
@@ -1143,17 +1163,17 @@ class _QuickActionTile extends StatelessWidget {
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [
-                accent.withOpacity(0.10),
+                accent.withValues(alpha: 0.10),
                 Colors.white,
               ],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: accent.withOpacity(0.20), width: 1),
+            border: Border.all(color: accent.withValues(alpha: 0.20), width: 1),
             boxShadow: [
               BoxShadow(
-                color: accent.withOpacity(0.14),
+                color: accent.withValues(alpha: 0.14),
                 blurRadius: 14,
                 offset: const Offset(0, 10),
               ),
@@ -1170,13 +1190,13 @@ class _QuickActionTile extends StatelessWidget {
                     width: 44,
                     height: 44,
                     decoration: BoxDecoration(
-                      color: accent.withOpacity(0.18),
+                      color: accent.withValues(alpha: 0.18),
                       borderRadius: BorderRadius.circular(14),
                     ),
                     child: Icon(action.icon, color: accent),
                   ),
                   const Spacer(),
-                  Icon(Icons.arrow_outward_rounded, size: 18, color: accent.withOpacity(0.8)),
+                  Icon(Icons.arrow_outward_rounded, size: 18, color: accent.withValues(alpha: 0.8)),
                 ],
               ),
               const Spacer(),

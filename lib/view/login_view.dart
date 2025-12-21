@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../viewmodel/login_viewmodel.dart';
-import 'package:e_program_apps/viewmodel/session_viewmodel.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -21,7 +20,6 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _redirectIfLoggedIn());
     _animationController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
@@ -44,22 +42,31 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     super.dispose();
   }
 
-  Future<void> _redirectIfLoggedIn() async {
-    final session = context.read<SessionViewModel>();
-    await session.checkSession();
-    if (!mounted) return;
-    if (session.isLoggedIn) {
-      GoRouter.of(context).go('/dashboard');
-    }
-  }
-
   // Method to handle login logic and navigation
   Future<void> _login(LoginViewModel viewModel) async {
     final success = await viewModel.login();
     if (!mounted) return; // Guard against async gap
     if (success) {
-      GoRouter.of(context).go('/dashboard');
+      GoRouter.of(context).go('/data-sync');
+      return;
     }
+    final message = viewModel.errorMessage?.trim();
+    _showErrorSnackBar(
+      message?.isNotEmpty == true ? message! : 'Login failed. Please try again.',
+    );
+  }
+
+  void _showErrorSnackBar(String message) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.clearSnackBars();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red.shade700,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 4),
+      ),
+    );
   }
 
   @override
@@ -147,15 +154,6 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                   ),
                                 ),
                                 const SizedBox(height: 25),
-                                if (viewModel.errorMessage != null)
-                                  Padding(
-                                    padding: const EdgeInsets.only(bottom: 15.0),
-                                    child: Text(
-                                      viewModel.errorMessage!,
-                                      style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold),
-                                      textAlign: TextAlign.center,
-                                    ),
-                                  ),
                                 viewModel.loading
                                     ? const CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(Colors.white))
                                     : _buildSignInButton(viewModel),

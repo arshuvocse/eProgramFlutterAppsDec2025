@@ -4,6 +4,8 @@ import 'package:e_program_apps/widgets/settings_list_item.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:e_program_apps/viewmodel/session_viewmodel.dart';
+import 'package:e_program_apps/data/database_helper.dart';
+import 'package:e_program_apps/model/user_model.dart';
 
 class SettingsView extends StatelessWidget {
   const SettingsView({super.key});
@@ -17,38 +19,43 @@ class SettingsView extends StatelessWidget {
         foregroundColor: Colors.black, // This sets the back arrow color
         elevation: 0,
       ),
-      body: ListView(
-        padding: const EdgeInsets.symmetric(vertical: 2),
-        children: [
-          _buildProfileCard(),
-          const SettingsListItem(
-            icon: Icons.person_outline,
-            title: 'User Info', // Changed from Profile to User Name
-            subtitle: 'View or edit your profile details',
-            isHeader: true, 
-          ),
-          const SettingsListItem(
-            icon: Icons.lock_outline,
-            title: 'Change Password',
-            subtitle: 'Update your account password',
-          ),
-          const SettingsListItem(
-            icon: Icons.notifications_none,
-            title: 'Notifications',
-            subtitle: 'Manage push and email notifications',
-          ),
-          const SettingsListItem(
-            icon: Icons.info_outline,
-            title: 'About App',
-            subtitle: 'Version info and app details',
-          ),
-          SettingsListItem(
-            icon: Icons.logout,
-            title: 'Logout',
-            subtitle: 'Sign out of your account',
-            onTap: () => _showLogoutConfirmation(context),
-          ),
-        ],
+      body: FutureBuilder<User?>(
+        future: DatabaseHelper().getCachedUser(),
+        builder: (context, snapshot) {
+          final loading = snapshot.connectionState == ConnectionState.waiting;
+          final user = snapshot.data;
+          return MediaQuery.removePadding(
+            context: context,
+            removeTop: true,
+            child: ListView(
+              padding: EdgeInsets.zero,
+              children: [
+                _buildProfileCard(user: user, loading: loading),
+                const SettingsListItem(
+                  icon: Icons.lock_outline,
+                  title: 'Change Password',
+                  subtitle: 'Update your account password',
+                ),
+                const SettingsListItem(
+                  icon: Icons.notifications_none,
+                  title: 'Notifications',
+                  subtitle: 'Manage push and email notifications',
+                ),
+                const SettingsListItem(
+                  icon: Icons.info_outline,
+                  title: 'About App',
+                  subtitle: 'Version info and app details',
+                ),
+                SettingsListItem(
+                  icon: Icons.logout,
+                  title: 'Logout',
+                  subtitle: 'Sign out of your account',
+                  onTap: () => _showLogoutConfirmation(context),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -86,9 +93,21 @@ class SettingsView extends StatelessWidget {
     router.go('/');
   }
 
-  Widget _buildProfileCard() {
+  Widget _buildProfileCard({User? user, bool loading = false}) {
+    final userName = loading
+        ? 'Loading...'
+        : _displayValue(user?.userName ?? '', fallback: 'User not found');
+    final loginName = loading
+        ? 'Please wait'
+        : _displayValue(user?.loginName ?? '', fallback: 'N/A');
+    final designation = loading
+        ? 'Please wait'
+        : _displayValue(user?.desigName ?? '', fallback: 'N/A');
+    final roleType = loading
+        ? 'Please wait'
+        : _displayValue(user?.roleType ?? '', fallback: 'N/A');
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       child: Container(
         decoration: BoxDecoration(
           color: Colors.blue.shade50,
@@ -124,28 +143,31 @@ class SettingsView extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text(
-                      'Md. Abdur Razzak Shuvo',
-                      style: TextStyle(
+                    Text(
+                      userName,
+                      style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.w700,
                         color: Color(0xFF0A2540),
                       ),
                     ),
-                    const SizedBox(height: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(50),
+                    const SizedBox(height: 4),
+                    Text(
+                      loginName,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Colors.black54,
+                        fontWeight: FontWeight.w500,
                       ),
-                      child: const Text(
-                        'Senior Instructor',
-                        style: TextStyle(
-                          color: Color(0xFF1A3D8A),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: [
+                        _buildChip(designation),
+                        _buildChip(roleType),
+                      ],
                     ),
                   ],
                 ),
@@ -156,5 +178,27 @@ class SettingsView extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Widget _buildChip(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(50),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Color(0xFF1A3D8A),
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  String _displayValue(String value, {String fallback = 'N/A'}) {
+    final trimmed = value.trim();
+    return trimmed.isEmpty ? fallback : trimmed;
   }
 }

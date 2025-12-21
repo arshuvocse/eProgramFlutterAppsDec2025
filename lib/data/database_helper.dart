@@ -22,7 +22,7 @@ class DatabaseHelper {
     String path = join(await getDatabasesPath(), 'app_database.db');
     return await openDatabase(
       path,
-      version: 5,
+      version: 14,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -39,6 +39,13 @@ class DatabaseHelper {
         userType TEXT,
         loginName TEXT,
         password TEXT,
+        userCode TEXT,
+        roleTypeId INTEGER,
+        isApprove INTEGER,
+        isForward INTEGER,
+        versionName TEXT,
+        supervisorId INTEGER,
+        areaOfficeId INTEGER,
         userEmail TEXT,
         roleType TEXT,
         empRole TEXT,
@@ -51,11 +58,30 @@ class DatabaseHelper {
     await db.execute('''
       CREATE TABLE tblProvider(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        code TEXT NOT NULL UNIQUE,
-        category TEXT,
-        type TEXT,
-        phone TEXT
+        providerId INTEGER,
+        programId INTEGER,
+        programName TEXT,
+        providerCode TEXT NOT NULL UNIQUE,
+        providerName TEXT,
+        mobileNo TEXT,
+        nid TEXT,
+        email TEXT,
+        networkId TEXT,
+        providerTypeId INTEGER,
+        empType TEXT,
+        gender TEXT,
+        dateOfBirth TEXT,
+        presentAddress TEXT,
+        division TEXT,
+        district TEXT,
+        upazila TEXT,
+        unionName TEXT,
+        divisionId INTEGER,
+        districtId INTEGER,
+        upazilaId INTEGER,
+        unionId INTEGER,
+        wardOrMarket TEXT,
+        remarks TEXT
       )
     ''');
 
@@ -64,6 +90,8 @@ class DatabaseHelper {
       CREATE TABLE tblChecklistVisit(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         provider_code TEXT NOT NULL,
+        provider_id INTEGER,
+        is_draft INTEGER DEFAULT 0,
         created_at TEXT NOT NULL
       )
     ''');
@@ -103,6 +131,90 @@ class DatabaseHelper {
         updated_at TEXT
       )
     ''');
+
+    await db.execute('''
+      CREATE TABLE tblDivision(
+        divisionId INTEGER PRIMARY KEY,
+        divisionName TEXT
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE tblDistrict(
+        districtId INTEGER PRIMARY KEY,
+        divisionId INTEGER,
+        districtName TEXT
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE tblThana(
+        thanaId INTEGER PRIMARY KEY,
+        districtId INTEGER,
+        thanaName TEXT
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE tblDivisionalOffice(
+        divisionalOfficeId INTEGER PRIMARY KEY,
+        divisionalOfficeName TEXT
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE tblRegionalOffice(
+        regionalOfficeId INTEGER PRIMARY KEY,
+        divisionalOfficeId INTEGER,
+        regionalOfficeName TEXT
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE tblAreaOffice(
+        areaOfficeId INTEGER PRIMARY KEY,
+        regionalOfficeId INTEGER,
+        areaOfficeName TEXT
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE tblProgram(
+        programId INTEGER PRIMARY KEY,
+        programCode TEXT,
+        programName TEXT,
+        programShortName TEXT
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE tblProviderGroup(
+        providerGroupId INTEGER PRIMARY KEY,
+        groupName TEXT,
+        groupType TEXT
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE tblProviderDoctorType(
+        doctorTypeId INTEGER PRIMARY KEY,
+        doctorTypeName TEXT
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE tblAcademicQualification(
+        qualificationId INTEGER PRIMARY KEY,
+        qualificationName TEXT
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE tblProfessionalQualification(
+        qualificationId INTEGER PRIMARY KEY,
+        qualificationName TEXT
+      )
+    ''');
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -110,11 +222,30 @@ class DatabaseHelper {
       await db.execute('''
         CREATE TABLE IF NOT EXISTS tblProvider(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          name TEXT NOT NULL,
-          code TEXT NOT NULL UNIQUE,
-          category TEXT,
-          type TEXT,
-          phone TEXT
+          providerId INTEGER,
+          programId INTEGER,
+          programName TEXT,
+          providerCode TEXT NOT NULL UNIQUE,
+          providerName TEXT,
+          mobileNo TEXT,
+          nid TEXT,
+          email TEXT,
+          networkId TEXT,
+          providerTypeId INTEGER,
+          empType TEXT,
+          gender TEXT,
+          dateOfBirth TEXT,
+          presentAddress TEXT,
+          division TEXT,
+          district TEXT,
+          upazila TEXT,
+          unionName TEXT,
+          divisionId INTEGER,
+          districtId INTEGER,
+          upazilaId INTEGER,
+          unionId INTEGER,
+          wardOrMarket TEXT,
+          remarks TEXT
         )
       ''');
 
@@ -122,6 +253,8 @@ class DatabaseHelper {
         CREATE TABLE IF NOT EXISTS tblChecklistVisit(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           provider_code TEXT NOT NULL,
+          provider_id INTEGER,
+          is_draft INTEGER DEFAULT 0,
           created_at TEXT NOT NULL
         )
       ''');
@@ -178,6 +311,177 @@ class DatabaseHelper {
         )
       ''');
     }
+
+    if (oldVersion < 6) {
+      // Add new login payload fields to user cache.
+      const columns = <String>[
+        'userCode TEXT',
+        'roleTypeId INTEGER',
+        'isApprove INTEGER',
+        'isForward INTEGER',
+        'versionName TEXT',
+        'supervisorId INTEGER',
+        'areaOfficeId INTEGER',
+      ];
+
+      for (final col in columns) {
+        try {
+          await db.execute('ALTER TABLE tblUser ADD COLUMN $col');
+        } catch (_) {
+          // Ignore if column already exists.
+        }
+      }
+    }
+
+    if (oldVersion < 7) {
+      // Recreate provider table with expanded schema.
+      await db.execute('DROP TABLE IF EXISTS tblProvider');
+      await db.execute('''
+        CREATE TABLE tblProvider(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          providerId INTEGER,
+          programId INTEGER,
+          programName TEXT,
+          providerCode TEXT NOT NULL UNIQUE,
+          providerName TEXT,
+          mobileNo TEXT,
+          nid TEXT,
+          email TEXT,
+          networkId TEXT,
+          providerTypeId INTEGER,
+          empType TEXT,
+          gender TEXT,
+          dateOfBirth TEXT,
+          presentAddress TEXT,
+          division TEXT,
+          district TEXT,
+          upazila TEXT,
+          unionName TEXT,
+          divisionId INTEGER,
+          districtId INTEGER,
+          upazilaId INTEGER,
+          unionId INTEGER,
+          wardOrMarket TEXT,
+          remarks TEXT
+        )
+      ''');
+    }
+
+    if (oldVersion < 8) {
+      try {
+        await db.execute(
+          'ALTER TABLE tblChecklistVisit ADD COLUMN provider_id INTEGER',
+        );
+      } catch (_) {
+        // Ignore if column already exists.
+      }
+      try {
+        await db.execute(
+          'ALTER TABLE tblChecklistVisit ADD COLUMN is_draft INTEGER DEFAULT 0',
+        );
+        await db.execute(
+          'UPDATE tblChecklistVisit SET is_draft = 0 WHERE is_draft IS NULL',
+        );
+      } catch (_) {
+        // Ignore if column already exists.
+      }
+    }
+
+    if (oldVersion < 9) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS tblDivision(
+          divisionId INTEGER PRIMARY KEY,
+          divisionName TEXT
+        )
+      ''');
+
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS tblDistrict(
+          districtId INTEGER PRIMARY KEY,
+          divisionId INTEGER,
+          districtName TEXT
+        )
+      ''');
+
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS tblThana(
+          thanaId INTEGER PRIMARY KEY,
+          districtId INTEGER,
+          thanaName TEXT
+        )
+      ''');
+
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS tblDivisionalOffice(
+          divisionalOfficeId INTEGER PRIMARY KEY,
+          divisionalOfficeName TEXT
+        )
+      ''');
+
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS tblRegionalOffice(
+          regionalOfficeId INTEGER PRIMARY KEY,
+          divisionalOfficeId INTEGER,
+          regionalOfficeName TEXT
+        )
+      ''');
+
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS tblAreaOffice(
+          areaOfficeId INTEGER PRIMARY KEY,
+          regionalOfficeId INTEGER,
+          areaOfficeName TEXT
+        )
+      ''');
+    }
+
+    if (oldVersion < 10) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS tblProgram(
+          programId INTEGER PRIMARY KEY,
+          programCode TEXT,
+          programName TEXT,
+          programShortName TEXT
+        )
+      ''');
+    }
+
+    if (oldVersion < 11) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS tblProviderGroup(
+          providerGroupId INTEGER PRIMARY KEY,
+          groupName TEXT,
+          groupType TEXT
+        )
+      ''');
+    }
+
+    if (oldVersion < 12) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS tblProviderDoctorType(
+          doctorTypeId INTEGER PRIMARY KEY,
+          doctorTypeName TEXT
+        )
+      ''');
+    }
+
+    if (oldVersion < 13) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS tblAcademicQualification(
+          qualificationId INTEGER PRIMARY KEY,
+          qualificationName TEXT
+        )
+      ''');
+    }
+
+    if (oldVersion < 14) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS tblProfessionalQualification(
+          qualificationId INTEGER PRIMARY KEY,
+          qualificationName TEXT
+        )
+      ''');
+    }
   }
 
   Future<void> saveUser(User user) async {
@@ -193,6 +497,13 @@ class DatabaseHelper {
         'userType': user.userType,
         'loginName': user.loginName,
         'password': user.password,
+        'userCode': user.userCode,
+        'roleTypeId': user.roleTypeId,
+        'isApprove': user.isApprove ? 1 : 0,
+        'isForward': user.isForward ? 1 : 0,
+        'versionName': user.versionName,
+        'supervisorId': user.supervisorId,
+        'areaOfficeId': user.areaOfficeId,
         'userEmail': user.userEmail,
         'roleType': user.roleType,
         'empRole': user.empRole,
@@ -211,6 +522,22 @@ class DatabaseHelper {
     final value = result.first['empInfoId'];
     if (value is int) return value;
     return int.tryParse('$value');
+  }
+
+  Future<int?> getUserId() async {
+    final db = await database;
+    final result = await db.query('tblUser', columns: ['userId'], limit: 1);
+    if (result.isEmpty) return null;
+    final value = result.first['userId'];
+    if (value is int) return value;
+    return int.tryParse('$value');
+  }
+
+  Future<User?> getCachedUser() async {
+    final db = await database;
+    final result = await db.query('tblUser', limit: 1);
+    if (result.isEmpty) return null;
+    return User.fromJson(result.first);
   }
 
   Future<bool> hasUser() async {
@@ -289,5 +616,202 @@ class DatabaseHelper {
       'tblDashboardTile',
       orderBy: 'id ASC',
     );
+  }
+
+  Future<void> cacheSeedData({
+    required List<Map<String, dynamic>> divisions,
+    required List<Map<String, dynamic>> districts,
+    required List<Map<String, dynamic>> thanas,
+    required List<Map<String, dynamic>> divisionalOffices,
+    required List<Map<String, dynamic>> regionalOffices,
+    required List<Map<String, dynamic>> areaOffices,
+  }) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete('tblDivision');
+      await txn.delete('tblDistrict');
+      await txn.delete('tblThana');
+      await txn.delete('tblDivisionalOffice');
+      await txn.delete('tblRegionalOffice');
+      await txn.delete('tblAreaOffice');
+
+      final batch = txn.batch();
+      for (final row in divisions) {
+        batch.insert(
+          'tblDivision',
+          {
+            'divisionId': row['divisionId'],
+            'divisionName': row['divisionName'],
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      for (final row in districts) {
+        batch.insert(
+          'tblDistrict',
+          {
+            'districtId': row['districtId'],
+            'divisionId': row['divisionId'],
+            'districtName': row['districtName'],
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      for (final row in thanas) {
+        batch.insert(
+          'tblThana',
+          {
+            'thanaId': row['thanaId'],
+            'districtId': row['districtId'],
+            'thanaName': row['thanaName'],
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      for (final row in divisionalOffices) {
+        batch.insert(
+          'tblDivisionalOffice',
+          {
+            'divisionalOfficeId': row['divisionalOfficeId'],
+            'divisionalOfficeName': row['divisionalOfficeName'],
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      for (final row in regionalOffices) {
+        batch.insert(
+          'tblRegionalOffice',
+          {
+            'regionalOfficeId': row['regionalOfficeId'],
+            'divisionalOfficeId': row['divisionalOfficeId'],
+            'regionalOfficeName': row['regionalOfficeName'],
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      for (final row in areaOffices) {
+        batch.insert(
+          'tblAreaOffice',
+          {
+            'areaOfficeId': row['areaOfficeId'],
+            'regionalOfficeId': row['regionalOfficeId'],
+            'areaOfficeName': row['areaOfficeName'],
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  Future<Map<String, int>> getSeedDataCounts() async {
+    final db = await database;
+    final tables = <String>[
+      'tblProgram',
+      'tblProviderGroup',
+      'tblProviderDoctorType',
+      'tblAcademicQualification',
+      'tblProfessionalQualification',
+      'tblDivision',
+      'tblDistrict',
+      'tblThana',
+      'tblDivisionalOffice',
+      'tblRegionalOffice',
+      'tblAreaOffice',
+    ];
+    final counts = <String, int>{};
+    for (final table in tables) {
+      final result = await db.rawQuery('SELECT COUNT(*) as count FROM $table');
+      counts[table] = Sqflite.firstIntValue(result) ?? 0;
+    }
+    return counts;
+  }
+
+  Future<void> cachePrograms(List<Map<String, dynamic>> programs) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete('tblProgram');
+      for (final program in programs) {
+        await txn.insert(
+          'tblProgram',
+          {
+            'programId': program['programId'] ?? 0,
+            'programCode': program['programCode'] ?? '',
+            'programName': program['programName'] ?? '',
+            'programShortName': program['programShortName'] ?? '',
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+    });
+  }
+
+  Future<void> cacheProviderGroups(List<Map<String, dynamic>> groups) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete('tblProviderGroup');
+      for (final group in groups) {
+        await txn.insert(
+          'tblProviderGroup',
+          {
+            'providerGroupId': group['providerGroupId'] ?? 0,
+            'groupName': group['groupName'] ?? '',
+            'groupType': group['groupType'] ?? '',
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+    });
+  }
+
+  Future<void> cacheProviderDoctorTypes(List<Map<String, dynamic>> doctorTypes) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete('tblProviderDoctorType');
+      for (final doc in doctorTypes) {
+        await txn.insert(
+          'tblProviderDoctorType',
+          {
+            'doctorTypeId': doc['doctorTypeId'] ?? 0,
+            'doctorTypeName': doc['doctorTypeName'] ?? '',
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+    });
+  }
+
+  Future<void> cacheAcademicQualifications(List<Map<String, dynamic>> qualifications) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete('tblAcademicQualification');
+      for (final qual in qualifications) {
+        await txn.insert(
+          'tblAcademicQualification',
+          {
+            'qualificationId': qual['qualificationId'] ?? 0,
+            'qualificationName': qual['qualificationName'] ?? '',
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+    });
+  }
+
+  Future<void> cacheProfessionalQualifications(List<Map<String, dynamic>> qualifications) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete('tblProfessionalQualification');
+      for (final qual in qualifications) {
+        await txn.insert(
+          'tblProfessionalQualification',
+          {
+            'qualificationId': qual['qualificationId'] ?? 0,
+            'qualificationName': qual['qualificationName'] ?? '',
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+    });
   }
 }

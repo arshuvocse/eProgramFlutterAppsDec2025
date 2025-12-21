@@ -26,7 +26,7 @@ class LocationTrackingService {
   bool _isConfigured = false;
   final DatabaseHelper _db = DatabaseHelper();
   bool _isSyncingOffline = false;
-  int? _empInfoId;
+  int? _userId;
 
   Future<void> init() async {
     if (_shouldSkipPlatform) return;
@@ -80,9 +80,9 @@ class LocationTrackingService {
       kIsWeb || !(Platform.isAndroid || Platform.isIOS);
 
   Future<void> _sendLocationUpdate() async {
-    final empInfoId = await _getEmpInfoId();
-    if (empInfoId <= 0) {
-      debugPrint('Location post skipped: no empInfoId found.');
+    final userId = await _getUserId();
+    if (userId <= 0) {
+      debugPrint('Location post skipped: no userId found.');
       return;
     }
     final position = await _getPosition();
@@ -93,7 +93,7 @@ class LocationTrackingService {
       '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
 
     final payload = {
-      'empInfoId': empInfoId,
+      'userId': userId,
       'latValue': position.latitude.toStringAsFixed(6),
       'longValue': position.longitude.toStringAsFixed(6),
       'addressName':
@@ -204,10 +204,11 @@ class LocationTrackingService {
 
   Future<void> _storeOffline(Map<String, dynamic> payload) async {
     try {
-      final empIdRaw = payload['empInfoId'];
-      final empId = empIdRaw is int ? empIdRaw : int.tryParse('$empIdRaw') ?? await _getEmpInfoId();
+      final userIdRaw = payload['userId'];
+      final userId = userIdRaw is int ? userIdRaw : int.tryParse('$userIdRaw') ?? await _getUserId();
       await _db.insertOfflineLocation(
-        empInfoId: empId,
+        // Reuse existing column to avoid a schema change; value now represents userId.
+        empInfoId: userId,
         latValue: payload['latValue']?.toString() ?? '',
         longValue: payload['longValue']?.toString() ?? '',
         addressName: payload['addressName']?.toString() ?? '',
@@ -229,7 +230,7 @@ class LocationTrackingService {
       final pending = await _db.getOfflineLocations(limit: 50);
       for (final row in pending) {
         final payload = {
-          'empInfoId': row['emp_info_id'] ?? await _getEmpInfoId(),
+          'userId': row['emp_info_id'] ?? await _getUserId(),
           'latValue': row['lat_value'] ?? '',
           'longValue': row['long_value'] ?? '',
           'addressName': row['address_name'] ?? '',
@@ -259,14 +260,14 @@ class LocationTrackingService {
     }
   }
 
-  Future<int> _getEmpInfoId() async {
-    if (_empInfoId != null && _empInfoId! > 0) return _empInfoId!;
-    final stored = await _db.getEmpInfoId();
+  Future<int> _getUserId() async {
+    if (_userId != null && _userId! > 0) return _userId!;
+    final stored = await _db.getUserId();
     if (stored != null && stored > 0) {
-      _empInfoId = stored;
+      _userId = stored;
       return stored;
     }
-    _empInfoId = 0; // keep trying on next calls
+    _userId = 0; // keep trying on next calls
     return 0;
   }
 

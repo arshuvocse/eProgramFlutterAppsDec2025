@@ -208,11 +208,11 @@ class AttendanceViewModel extends ChangeNotifier {
 
   Future<void> _loadPunchState() async {
     try {
-      final empInfoId = await _db.getEmpInfoId();
-      if (empInfoId == null || empInfoId <= 0) return;
+      final userId = await _db.getUserId();
+      if (userId == null || userId <= 0) return;
 
       final uri = Uri.parse(ApiConfig.punchInfo)
-          .replace(queryParameters: {'EmpInfoId': empInfoId.toString()});
+          .replace(queryParameters: {'userId': userId.toString()});
 
       // Align with working curl: POST with query param, empty body.
       final res = await http.post(uri).timeout(const Duration(seconds: 20));
@@ -275,8 +275,8 @@ class AttendanceViewModel extends ChangeNotifier {
 
   Future<bool> _sendPunch({required bool isPunchIn}) async {
     try {
-      final empInfoId = await _db.getEmpInfoId();
-      if (empInfoId == null || empInfoId <= 0) return false;
+      final userId = await _db.getUserId();
+      if (userId == null || userId <= 0) return false;
 
       final now = DateTime.now();
       final timeString = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
@@ -286,7 +286,7 @@ class AttendanceViewModel extends ChangeNotifier {
 
       final payload = {
         'attendanceId': 0,
-        'empInfoId': empInfoId,
+        'userId': userId,
         'punchInTime': timeString,
         'pInLat': lat,
         'pInLog': lng,

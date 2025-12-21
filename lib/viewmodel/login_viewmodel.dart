@@ -15,6 +15,7 @@ class LoginViewModel with ChangeNotifier {
   bool _loading = false;
   String? _errorMessage;
   final DeviceInfoService _deviceInfoService = DeviceInfoService();
+  final DatabaseHelper _db = DatabaseHelper();
 
   TextEditingController get usernameController => _usernameController;
   TextEditingController get emailController => _emailController;
@@ -54,13 +55,31 @@ class LoginViewModel with ChangeNotifier {
       final response = await http.get(uri).timeout(const Duration(seconds: 20));
 
       if (response.statusCode != 200) {
-        _errorMessage = 'Login failed (${response.statusCode}). Please try again.';
+        // Try to surface server-provided message if available
+        String? serverMsg;
+        try {
+          final decoded = jsonDecode(response.body);
+          if (decoded is Map<String, dynamic> && decoded['message'] != null) {
+            serverMsg = decoded['message'].toString();
+          }
+        } catch (_) {
+          // ignore decode error, will fall back to generic message
+        }
+        _errorMessage = serverMsg ?? 'Login failed (${response.statusCode}). Please try again.';
         _loading = false;
         notifyListeners();
         return false;
       }
 
-      final Map<String, dynamic> data = jsonDecode(response.body) as Map<String, dynamic>;
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map<String, dynamic>) {
+        _errorMessage = 'Unexpected response from server. Please try again.';
+        _loading = false;
+        notifyListeners();
+        return false;
+      }
+
+      final Map<String, dynamic> data = decoded;
       final twoDeviceMsg = (data['twoDeviceMsg'] ?? '').toString().trim();
       if (twoDeviceMsg.isNotEmpty) {
         _errorMessage = twoDeviceMsg;
@@ -73,7 +92,11 @@ class LoginViewModel with ChangeNotifier {
       final userId = userIdRaw is int ? userIdRaw : int.tryParse('$userIdRaw') ?? 0;
 
       if (userId == 0) {
-        _errorMessage = 'No user found';
+        final loginMessage = (data['loginMessage'] ?? '').toString().trim();
+        final msg = (data['message'] ?? 'Invalid username or password').toString().trim();
+        _errorMessage = loginMessage.isNotEmpty
+            ? loginMessage
+            : (msg.isNotEmpty ? msg : 'Invalid username or password');
         _loading = false;
         notifyListeners();
         return false;
@@ -81,11 +104,12 @@ class LoginViewModel with ChangeNotifier {
 
       final user = User.fromJson({
         ...data,
+        // Override with submitted password (API may echo empty string)
         'password': password,
         'userEmail': data['userEmail'] ?? data['email'] ?? '',
       });
 
-      await DatabaseHelper().saveUser(user);
+      await _db.saveUser(user);
       _errorMessage = null;
       _loading = false;
       notifyListeners();
